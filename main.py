@@ -19,26 +19,32 @@ for i in range(maxSeqNum):
     isACKList.append(0)
     timeList.append(0)
 
-icmp = getprotobyname("icmp")
-mySocket = socket(AF_INET, SOCK_RAW, icmp)
+#icmp = getprotobyname("icmp")
+mySocket = socket(AF_INET, SOCK_DGRAM)
 
 def createSegment(message, seqNum, isACK):
     sourcePort = 9876
     destPort = 9876
     ackNum = seqNum + 1
     checksum = 0
-    isACK = 0 #REPLACE WITH 0 OR 1 DEPENDING ON VALUE
+    #isACK = 0 #REPLACE WITH 0 OR 1 DEPENDING ON VALUE
+
+    sendSeqNum = seqNum
+    if (isACK):
+        sendSeqNum = 0
 
     #16, 16, 32, 32, 16, 16
-    header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
+    #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
     
     #Must be at most 255 characters
-    data = struct.pack("p", message)
+    #data = struct.pack("p", message)
 
     #CHECKSUM
 
-    header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
-    toSend = header + data
+    #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
+
+    toSend = [sourcePort, destPort, sendSeqNum, ackNum, cwnd, checksum, message]
+    #toSend = header + data
     return toSend
 
 
