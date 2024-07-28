@@ -2,6 +2,7 @@ from socket import *
 from threading import *
 from time import *
 import struct
+import pickle
 
 #DON'T KNOW IF THIS WORKS, JUST SOMETHING TO START
 
@@ -40,6 +41,7 @@ def createSegment(message, seqNum, isACK, isSYN):
     if (isACK):
         sendSeqNum = 0
         ACK = 1
+        ackNum = seqNum
     SYN = 0
     if (isSYN):
         SYN = 1
@@ -69,7 +71,7 @@ def timerACK(message, seqNum):
         sleep(timeOutTime)
         if(isACKList[seqNum] == 0):
             #SEND
-            mySocket.sendto(message.encode(), ('localhost', portNum))
+            mySocket.sendto(pickle.dumps(message), ('localhost', portNum))
         else:
             notACK = False
 
@@ -82,9 +84,10 @@ def TCPSend(message, isACK):
     global portNum
     toSend = createSegment(message, nextSeq, isACK, False)
     #SOCKET STUFF
-    mySocket.sendto(toSend.encode(), ('localhost', portNum))
+    mySocket.sendto(pickle.dumps(toSend), ('localhost', portNum))
     currSeq = nextSeq
-    timeList[currSeq] = gmtime(time())
+    #timeList[currSeq] = gmtime(time())
+    timeList[currSeq] = time()
     isACKList[currSeq] = 0
     #NEW THREAD
     tA = Thread(target=timerACK,args=(toSend,currSeq))
@@ -94,6 +97,8 @@ def TCPSend(message, isACK):
 
 def timeoutCalc(sendTime, timeReceived):
     global timeOutTime
+    global estTime
+    global devTime
     measureTime = timeReceived - sendTime
     devTime = 0.75 * devTime + 0.25 * abs(measureTime - estTime)
     estTime = 0.875 * estTime + 0.125 * measureTime
@@ -108,7 +113,7 @@ def receiveACK(seqNum):
     if(seqNum > base):
         base = seqNum % base
         isACKList[seqNum] = 1
-    else:
+    #else:
         #DROPPED A PACKET, HANDLE
 
 def TCPReceive():
@@ -121,38 +126,43 @@ def TCPReceive():
     while True:
         #RECEIVE MESSAGE
         message, clientAddress = mySocket.recvfrom(portNum)
-        recvTime = gmtime(time())
-        message = message.decode()
+        #recvTime = gmtime(time())
+        recvTime = time()
+        message = pickle.loads(message)
         #FIND IF ACK
-        ackValue = message[8]
+        isACK = message[7]
+        ackValue = message[4]
         #FIND SEQ NUM
         receivedSeqNum = message[3]
         #PERFORM CHECKSUM CALCULATIONS
         #FIND CHECKSUM
 
+        calcChecksum = 0 #TEMP
+
         receivedChecksum = message[6]
         if(calcChecksum == receivedChecksum):
-            if ackValue == 1:
-                receiveACK(seqNum)
+            if isACK == 1:
+                receiveACK(ackValue)
             elif (expectedSeq == receivedSeqNum):
                 #GRAB DATA AND PRINT
                 print(message[9])
                 ackToSend = createSegment("", receivedSeqNum, True, False)
                 #DIRECTLY SEND
-                mySocket.sendto(ackToSend.encode(), ('localhost', portNum))
+                mySocket.sendto(pickle.dumps(ackToSend), ('localhost', portNum))
                 expectedSeq += 1
         else:
             #DIRECTLY SEND
-            mySocket.sendto(ackToSend.encode(), ('localhost', portNum))
+            mySocket.sendto(pickle.dumps(ackToSend), ('localhost', portNum))
 
 def handshakeSend(sock):
     global nextSeq
     global portNum
     global sendReady
     handshakeMessage = createSegment("", nextSeq, False, True)
-    sock.sendto(handshakeMessage.encode(), ('localhost', portNum))
+    sock.sendto(pickle.dumps(handshakeMessage), ('localhost', portNum))
     currSeq = nextSeq
-    timeList[currSeq] = gmtime(time())
+    #timeList[currSeq] = gmtime(time())
+    timeList[currSeq] = time()
     isACKList[currSeq] = 0
     #NEW THREAD
     tA = Thread(target=timerACK,args=(handshakeMessage,currSeq))
@@ -160,8 +170,9 @@ def handshakeSend(sock):
     synACKGot = False
     while (not synACKGot):
         response, clientAddress = sock.recvfrom(portNum)
-        recvTime = gmtime(time())
-        response = response.decode()
+        #recvTime = gmtime(time())
+        recvTime = time()
+        response = pickle.loads(response)
         #FIND IF SYNACK
         recvACK = response[8]
         recvSYN = response[7]
@@ -170,7 +181,7 @@ def handshakeSend(sock):
             isACKList[currSeq] = 1
             timeoutCalc(timeList[currSeq], recvTime)
     handshakeResponse = createSegment("", nextSeq, True, False)
-    sock.sendto(handshakeResponse.encode(), ('localhost', portNum))
+    sock.sendto(pickle.dumps(handshakeResponse), ('localhost', portNum))
     sendReady = True
 
 def handshakeRecv(sock):
@@ -180,16 +191,17 @@ def handshakeRecv(sock):
     synGot = False
     while (not synGot):
         message, clientAddress = sock.recvfrom(portNum)
-        message = message.decode()
+        message = pickle.loads(message)
         #FIND IF SYN
-        recvSYN = response[7]
-        recvACK = response[8]
+        recvSYN = message[7]
+        recvACK = message[8]
         if(recvSYN == 1 and recvACK == 0):
             synGot = True
     handshakeACK = createSegment("", nextSeq, True, True)
-    sock.sendto(handshakeACK.encode(), ('localhost', portNum))
+    sock.sendto(pickle.dumps(handshakeACK), ('localhost', portNum))
     currSeq = nextSeq
-    timeList[currSeq] = gmtime(time())
+    #timeList[currSeq] = gmtime(time())
+    timeList[currSeq] = time()
     isACKList[currSeq] = 0
     #NEW THREAD
     tA = Thread(target=timerACK,args=(handshakeACK,currSeq))
@@ -197,8 +209,9 @@ def handshakeRecv(sock):
     ackGot = False
     while (not ackGot):
         response, clientAddress = sock.recvfrom(portNum)
-        recvTime = gmtime(time())
-        response = response.decode()
+        #recvTime = gmtime(time())
+        recvTime = time()
+        response = pickle.loads(response)
         #FIND IF ACK
         recvACK = response[8]
         recvSYN = response[7]
