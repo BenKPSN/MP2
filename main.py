@@ -4,9 +4,10 @@ from time import *
 import struct
 import pickle
 
-#DON'T KNOW IF THIS WORKS, JUST SOMETHING TO START
+#THIS WORKS
 
-portNum = 9876
+recvPort = 9876
+sendPort = 9875
 nextSeq = 5
 expectedSeq = 5
 base = 5
@@ -23,15 +24,11 @@ for i in range(maxSeqNum):
     isACKList.append(0)
     timeList.append(0)
 
-#icmp = getprotobyname("icmp")
-mySocket = socket(AF_INET, SOCK_DGRAM)
-mySocket.bind(('', portNum))
-
 def createSegment(message, seqNum, isACK, isSYN):
-    global portNum
+    global recvPort
     global cwnd
-    sourcePort = portNum
-    destPort = portNum
+    sourcePort = recvPort
+    destPort = sendPort
     ackNum = seqNum + 1
     checksum = 0
     #isACK = 0 #REPLACE WITH 0 OR 1 DEPENDING ON VALUE
@@ -66,12 +63,13 @@ def timerACK(message, seqNum):
     global isACKList
     global timeOutTime
     global mySocket
-    global portNum
+    global recvPort
+    global sendPort
     while(notACK):
         sleep(timeOutTime)
         if(isACKList[seqNum] == 0):
             #SEND
-            mySocket.sendto(pickle.dumps(message), ('localhost', portNum))
+            mySocket.sendto(pickle.dumps(message), ('localhost', sendPort))
         else:
             notACK = False
 
@@ -81,10 +79,11 @@ def TCPSend(message, isACK):
     global timeList
     global isACKList
     global mySocket
-    global portNum
+    global recvPort
+    global sendPort
     toSend = createSegment(message, nextSeq, isACK, False)
     #SOCKET STUFF
-    mySocket.sendto(pickle.dumps(toSend), ('localhost', portNum))
+    mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
     currSeq = nextSeq
     #timeList[currSeq] = gmtime(time())
     timeList[currSeq] = time()
@@ -119,13 +118,14 @@ def receiveACK(seqNum):
 def TCPReceive():
     global expectedSeq
     global recvTime
-    global portNum
+    global recvPort
+    global sendPort
     global mySocket
     #THIS WILL ALWAYS ACKNOWLEDGE THE FIRST PACKET
     ackToSend = createSegment("", 0, True, False)
     while True:
         #RECEIVE MESSAGE
-        message, clientAddress = mySocket.recvfrom(portNum)
+        message, clientAddress = mySocket.recvfrom(recvPort)
         #recvTime = gmtime(time())
         recvTime = time()
         message = pickle.loads(message)
@@ -148,18 +148,20 @@ def TCPReceive():
                 print(message[9])
                 ackToSend = createSegment("", receivedSeqNum, True, False)
                 #DIRECTLY SEND
-                mySocket.sendto(pickle.dumps(ackToSend), ('localhost', portNum))
+                mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
                 expectedSeq += 1
         else:
             #DIRECTLY SEND
-            mySocket.sendto(pickle.dumps(ackToSend), ('localhost', portNum))
+            mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
 
 def handshakeSend(sock):
     global nextSeq
-    global portNum
+    global recvPort
+    global sendPort
     global sendReady
+    #print("sending message")
     handshakeMessage = createSegment("", nextSeq, False, True)
-    sock.sendto(pickle.dumps(handshakeMessage), ('localhost', portNum))
+    sock.sendto(pickle.dumps(handshakeMessage), ('localhost', sendPort))
     currSeq = nextSeq
     #timeList[currSeq] = gmtime(time())
     timeList[currSeq] = time()
@@ -168,8 +170,9 @@ def handshakeSend(sock):
     tA = Thread(target=timerACK,args=(handshakeMessage,currSeq))
     tA.start()
     synACKGot = False
+    #print("waiting for SYNACK")
     while (not synACKGot):
-        response, clientAddress = sock.recvfrom(portNum)
+        response, clientAddress = sock.recvfrom(recvPort)
         #recvTime = gmtime(time())
         recvTime = time()
         response = pickle.loads(response)
@@ -180,25 +183,29 @@ def handshakeSend(sock):
             synACKGot = True
             isACKList[currSeq] = 1
             timeoutCalc(timeList[currSeq], recvTime)
+    #print("SYNACK got. Sending ACK")
     handshakeResponse = createSegment("", nextSeq, True, False)
-    sock.sendto(pickle.dumps(handshakeResponse), ('localhost', portNum))
+    sock.sendto(pickle.dumps(handshakeResponse), ('localhost', sendPort))
     sendReady = True
 
 def handshakeRecv(sock):
     global nextSeq
-    global portNum
+    global recvPort
+    global sendPort
     global recvReady
     synGot = False
+    #print("waiting for message")
     while (not synGot):
-        message, clientAddress = sock.recvfrom(portNum)
+        message, clientAddress = sock.recvfrom(recvPort)
         message = pickle.loads(message)
         #FIND IF SYN
         recvSYN = message[7]
         recvACK = message[8]
         if(recvSYN == 1 and recvACK == 0):
             synGot = True
+    #print("everything's good, sending ACK")
     handshakeACK = createSegment("", nextSeq, True, True)
-    sock.sendto(pickle.dumps(handshakeACK), ('localhost', portNum))
+    sock.sendto(pickle.dumps(handshakeACK), ('localhost', sendPort))
     currSeq = nextSeq
     #timeList[currSeq] = gmtime(time())
     timeList[currSeq] = time()
@@ -207,8 +214,9 @@ def handshakeRecv(sock):
     tA = Thread(target=timerACK,args=(handshakeACK,currSeq))
     tA.start()
     ackGot = False
+    #print("waiting for ACK")
     while (not ackGot):
-        response, clientAddress = sock.recvfrom(portNum)
+        response, clientAddress = sock.recvfrom(recvPort)
         #recvTime = gmtime(time())
         recvTime = time()
         response = pickle.loads(response)
@@ -220,12 +228,34 @@ def handshakeRecv(sock):
             isACKList[currSeq] = 1
             timeoutCalc(timeList[currSeq], recvTime)
     recvReady = True
+    #print("ACK got")
 
 def threeWayHandshake(sock):
+    sleep(2)
+    #print("in threeway")
     hS = Thread(target=handshakeSend,args=(sock, ))
     hR = Thread(target=handshakeRecv,args=(sock, ))
+    #print("threads start")
     hS.start()
     hR.start()
+
+userSelected = False
+while (not userSelected):
+    userNum = input("Which user are you (1 or 2): ")
+    if(userNum == "1"):
+        userSelected = True
+        recvPort = 9876
+        sendPort = 9875
+    elif(userNum == "2"):
+        userSelected = True
+        recvPort = 9875
+        sendPort = 9876
+    else:
+        print("ERROR: Not a valid user. Please try again.")
+
+#icmp = getprotobyname("icmp")
+mySocket = socket(AF_INET, SOCK_DGRAM)
+mySocket.bind(('', recvPort))
 
 threeWayHandshake(mySocket)
 
