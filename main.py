@@ -16,6 +16,8 @@ isACKList = []
 timeList = []
 maxSeqNum = 87
 cwnd = 99
+sendReady = False
+recvReady = False
 for i in range(maxSeqNum):
     isACKList.append(0)
     timeList.append(0)
@@ -24,8 +26,9 @@ for i in range(maxSeqNum):
 mySocket = socket(AF_INET, SOCK_DGRAM)
 mySocket.bind(('', portNum))
 
-def createSegment(message, seqNum, isACK):
+def createSegment(message, seqNum, isACK, isSYN):
     global portNum
+    global cwnd
     sourcePort = portNum
     destPort = portNum
     ackNum = seqNum + 1
@@ -33,8 +36,13 @@ def createSegment(message, seqNum, isACK):
     #isACK = 0 #REPLACE WITH 0 OR 1 DEPENDING ON VALUE
 
     sendSeqNum = seqNum
+    ACK = 0
     if (isACK):
         sendSeqNum = 0
+        ACK = 1
+    SYN = 0
+    if (isSYN):
+        SYN = 1
 
     #16, 16, 32, 32, 16, 16
     #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
@@ -46,7 +54,7 @@ def createSegment(message, seqNum, isACK):
 
     #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
 
-    toSend = ['localhost', sourcePort, destPort, sendSeqNum, ackNum, cwnd, checksum, message]
+    toSend = ['localhost', sourcePort, destPort, sendSeqNum, ackNum, cwnd, checksum, SYN, ACK, message]
     #toSend = header + data
     return toSend
 
@@ -72,7 +80,7 @@ def TCPSend(message, isACK):
     global isACKList
     global mySocket
     global portNum
-    toSend = createSegment(message, nextSeq, isACK)
+    toSend = createSegment(message, nextSeq, isACK, False)
     #SOCKET STUFF
     mySocket.sendto(toSend.encode(), ('localhost', portNum))
     currSeq = nextSeq
@@ -100,6 +108,8 @@ def receiveACK(seqNum):
     if(seqNum > base):
         base = seqNum % base
         isACKList[seqNum] = 1
+    else:
+        #DROPPED A PACKET, HANDLE
 
 def TCPReceive():
     global expectedSeq
@@ -107,32 +117,107 @@ def TCPReceive():
     global portNum
     global mySocket
     #THIS WILL ALWAYS ACKNOWLEDGE THE FIRST PACKET
-    ackToSend = createSegment("", 0, True)
+    ackToSend = createSegment("", 0, True, False)
     while True:
         #RECEIVE MESSAGE
         message, clientAddress = mySocket.recvfrom(portNum)
+        recvTime = gmtime(time())
         message = message.decode()
-        #FIND ACK VALUE
-        ackValue = message[4]
+        #FIND IF ACK
+        ackValue = message[8]
         #FIND SEQ NUM
         receivedSeqNum = message[3]
         #PERFORM CHECKSUM CALCULATIONS
         #FIND CHECKSUM
+
         receivedChecksum = message[6]
         if(calcChecksum == receivedChecksum):
             if ackValue == 1:
-                recvTime = gmtime(time())
                 receiveACK(seqNum)
             elif (expectedSeq == receivedSeqNum):
                 #GRAB DATA AND PRINT
-                print(message[7])
-                ackToSend = createSegment("", receivedSeqNum, True)
+                print(message[9])
+                ackToSend = createSegment("", receivedSeqNum, True, False)
                 #DIRECTLY SEND
                 mySocket.sendto(ackToSend.encode(), ('localhost', portNum))
                 expectedSeq += 1
         else:
             #DIRECTLY SEND
             mySocket.sendto(ackToSend.encode(), ('localhost', portNum))
+
+def handshakeSend(sock):
+    global nextSeq
+    global portNum
+    global sendReady
+    handshakeMessage = createSegment("", nextSeq, False, True)
+    sock.sendto(handshakeMessage.encode(), ('localhost', portNum))
+    currSeq = nextSeq
+    timeList[currSeq] = gmtime(time())
+    isACKList[currSeq] = 0
+    #NEW THREAD
+    tA = Thread(target=timerACK,args=(handshakeMessage,currSeq))
+    tA.start()
+    synACKGot = False
+    while (not synACKGot):
+        response, clientAddress = sock.recvfrom(portNum)
+        recvTime = gmtime(time())
+        response = response.decode()
+        #FIND IF SYNACK
+        recvACK = response[8]
+        recvSYN = response[7]
+        if(recvACK == 1 and recvSYN == 1):
+            synACKGot = True
+            isACKList[currSeq] = 1
+            timeoutCalc(timeList[currSeq], recvTime)
+    handshakeResponse = createSegment("", nextSeq, True, False)
+    sock.sendto(handshakeResponse.encode(), ('localhost', portNum))
+    sendReady = True
+
+def handshakeRecv(sock):
+    global nextSeq
+    global portNum
+    global recvReady
+    synGot = False
+    while (not synGot):
+        message, clientAddress = sock.recvfrom(portNum)
+        message = message.decode()
+        #FIND IF SYN
+        recvSYN = response[7]
+        recvACK = response[8]
+        if(recvSYN == 1 and recvACK == 0):
+            synGot = True
+    handshakeACK = createSegment("", nextSeq, True, True)
+    sock.sendto(handshakeACK.encode(), ('localhost', portNum))
+    currSeq = nextSeq
+    timeList[currSeq] = gmtime(time())
+    isACKList[currSeq] = 0
+    #NEW THREAD
+    tA = Thread(target=timerACK,args=(handshakeACK,currSeq))
+    tA.start()
+    ackGot = False
+    while (not ackGot):
+        response, clientAddress = sock.recvfrom(portNum)
+        recvTime = gmtime(time())
+        response = response.decode()
+        #FIND IF ACK
+        recvACK = response[8]
+        recvSYN = response[7]
+        if(recvACK == 1 and recvSYN == 0):
+            ackGot = True
+            isACKList[currSeq] = 1
+            timeoutCalc(timeList[currSeq], recvTime)
+    recvReady = True
+
+def threeWayHandshake(sock):
+    hS = Thread(target=handshakeSend,args=(sock, ))
+    hR = Thread(target=handshakeRecv,args=(sock, ))
+    hS.start()
+    hR.start()
+
+threeWayHandshake(mySocket)
+
+while (not sendReady or not recvReady):
+    sleep(1)
 
 #THREAD
 tR = Thread(target=TCPReceive)
