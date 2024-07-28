@@ -5,6 +5,7 @@ import struct
 
 #DON'T KNOW IF THIS WORKS, JUST SOMETHING TO START
 
+portNum = 9876
 nextSeq = 5
 expectedSeq = 5
 base = 5
@@ -21,10 +22,12 @@ for i in range(maxSeqNum):
 
 #icmp = getprotobyname("icmp")
 mySocket = socket(AF_INET, SOCK_DGRAM)
+mySocket.bind(('', portNum))
 
 def createSegment(message, seqNum, isACK):
-    sourcePort = 9876
-    destPort = 9876
+    global portNum
+    sourcePort = portNum
+    destPort = portNum
     ackNum = seqNum + 1
     checksum = 0
     #isACK = 0 #REPLACE WITH 0 OR 1 DEPENDING ON VALUE
@@ -43,7 +46,7 @@ def createSegment(message, seqNum, isACK):
 
     #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
 
-    toSend = [sourcePort, destPort, sendSeqNum, ackNum, cwnd, checksum, message]
+    toSend = ['localhost', sourcePort, destPort, sendSeqNum, ackNum, cwnd, checksum, message]
     #toSend = header + data
     return toSend
 
@@ -52,10 +55,13 @@ def timerACK(message, seqNum):
     notACK = True
     global isACKList
     global timeOutTime
+    global mySocket
+    global portNum
     while(notACK):
         sleep(timeOutTime)
         if(isACKList[seqNum] == 0):
             #SEND
+            mySocket.sendto(message.encode(), ('localhost', portNum))
         else:
             notACK = False
 
@@ -64,12 +70,17 @@ def TCPSend(message, isACK):
     global nextSeq
     global timeList
     global isACKList
+    global mySocket
+    global portNum
     toSend = createSegment(message, nextSeq, isACK)
     #SOCKET STUFF
-    timeList[nextSeq] = gmtime(time())
-    isACKList[nextSeq] = 0
+    mySocket.sendto(toSend.encode(), ('localhost', portNum))
+    currSeq = nextSeq
+    timeList[currSeq] = gmtime(time())
+    isACKList[currSeq] = 0
     #NEW THREAD
-    timerACK(toSend, nextSeq)
+    tA = Thread(target=timerACK,args=(toSend,currSeq))
+    tA.start()
     #nextSeq = (nextSeq + len(message)) % maxSeqNum
     nextSeq += 1 #FOCUS ON BASICS FOR NOW
 
@@ -93,35 +104,47 @@ def receiveACK(seqNum):
 def TCPReceive():
     global expectedSeq
     global recvTime
+    global portNum
+    global mySocket
     #THIS WILL ALWAYS ACKNOWLEDGE THE FIRST PACKET
     ackToSend = createSegment("", 0, True)
     while True:
         #RECEIVE MESSAGE
+        message, clientAddress = mySocket.recvfrom(portNum)
+        message = message.decode()
         #FIND ACK VALUE
+        ackValue = message[4]
         #FIND SEQ NUM
+        receivedSeqNum = message[3]
         #PERFORM CHECKSUM CALCULATIONS
         #FIND CHECKSUM
+        receivedChecksum = message[6]
         if(calcChecksum == receivedChecksum):
             if ackValue == 1:
                 recvTime = gmtime(time())
                 receiveACK(seqNum)
             elif (expectedSeq == receivedSeqNum):
                 #GRAB DATA AND PRINT
+                print(message[7])
                 ackToSend = createSegment("", receivedSeqNum, True)
                 #DIRECTLY SEND
+                mySocket.sendto(ackToSend.encode(), ('localhost', portNum))
                 expectedSeq += 1
         else:
             #DIRECTLY SEND
+            mySocket.sendto(ackToSend.encode(), ('localhost', portNum))
 
 #THREAD
-TCPReceive()
+tR = Thread(target=TCPReceive)
+tR.start()
 
 while True:
     #SOCKETS?
     #THREAD
     message = input("Please enter a message: ")
     #THREAD
-    TCPSend(message, False)
+    tS = Thread(target=TCPSend,args=(message, False, ))
+    tS.start()
     #seqNum = nextSeq
     #RECEIVE SOCKET
     #recvTime = gmtime(time())
