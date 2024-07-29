@@ -20,6 +20,8 @@ maxSeqNum = 87
 cwnd = 99
 sendReady = False
 recvReady = False
+sendDone = False
+recvDone = False
 for i in range(maxSeqNum):
     isACKList.append(0)
     timeList.append(0)
@@ -81,6 +83,8 @@ def TCPSend(message, isACK):
     global mySocket
     global recvPort
     global sendPort
+    global sendDone
+    global maxSeqNum
     toSend = createSegment(message, nextSeq, isACK, False)
     #SOCKET STUFF
     mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
@@ -93,6 +97,10 @@ def TCPSend(message, isACK):
     tA.start()
     #nextSeq = (nextSeq + len(message)) % maxSeqNum
     nextSeq += 1 #FOCUS ON BASICS FOR NOW
+    if(message == "DONE"):
+        sendDone = True
+        for i in range(maxSeqNum):
+            isACKList[i] = 1
 
 def timeoutCalc(sendTime, timeReceived):
     global timeOutTime
@@ -136,9 +144,11 @@ def TCPReceive():
     global recvPort
     global sendPort
     global mySocket
+    global sendDone
+    global recvDone
     #THIS WILL ALWAYS ACKNOWLEDGE THE FIRST PACKET
     ackToSend = createSegment("", 0, True, False)
-    while True:
+    while (not recvDone):
         #RECEIVE MESSAGE
         message, clientAddress = mySocket.recvfrom(recvPort)
         #recvTime = gmtime(time())
@@ -157,18 +167,47 @@ def TCPReceive():
 
         receivedChecksum = message[6]
         if(calcChecksum == receivedChecksum):
-            if isACK == 1:
+            if (isACK == 1 and not sendDone):
                 receiveACK(ackValue)
-            elif (expectedSeq == receivedSeqNum):
-                #GRAB DATA AND PRINT
-                print(message[9])
-                ackToSend = createSegment("", receivedSeqNum, True, False)
-                #DIRECTLY SEND
+            elif (message[9] == "DONE" and sendDone):
+                print("Receiver closed")
+                print(receivedSeqNum)
+                ackToSend = createSegment("DONE", receivedSeqNum, True, False)
                 mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
-                expectedSeq += 1
+                sleep(timeOutTime*2)
+                recvDone = True
+            elif (expectedSeq == receivedSeqNum):
+                if(message[9] == "DONE"):
+                    print("Received DONE")
+                    sendDone = True
+                    recvDone = True
+                    ackToSend = createSegment("", receivedSeqNum, True, False)
+                    #DIRECTLY SEND
+                    print(receivedSeqNum)
+                    mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
+                    doneMessage = createSegment("DONE", receivedSeqNum + 1, False, False)
+                    mySocket.sendto(pickle.dumps(doneMessage), ('localhost', sendPort))
+                    print("waiting for last ACK")
+                    finalACK = False
+                    while(not finalACK):
+                        message, clientAddress = mySocket.recvfrom(recvPort)
+                        message = pickle.loads(message)
+                        isACK = message[7]
+                        ackValue = message[4]
+                        if(isACK == 1 and message[4] == (receivedSeqNum + 1)):
+                            print("Received final ACK")
+                            finalACK = True
+                else:
+                    #GRAB DATA AND PRINT
+                    print(message[9])
+                    ackToSend = createSegment("", receivedSeqNum, True, False)
+                    #DIRECTLY SEND
+                    mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
+                    expectedSeq += 1
         else:
             #DIRECTLY SEND
             mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
+    #mySocket.close()
 
 def handshakeSend(sock):
     global nextSeq
@@ -273,6 +312,8 @@ while (not userSelected):
 mySocket = socket(AF_INET, SOCK_DGRAM)
 mySocket.bind(('', recvPort))
 
+print("Please wait for set up.")
+
 threeWayHandshake(mySocket)
 
 while (not sendReady or not recvReady):
@@ -282,10 +323,16 @@ while (not sendReady or not recvReady):
 tR = Thread(target=TCPReceive)
 tR.start()
 
-while True:
+print('\n')
+print("You may now begin sending information.")
+print("To disconnect, please type DONE")
+
+while (not sendDone):
     #SOCKETS?
     #THREAD
-    message = input("Please enter a message: ")
+    message = input()
+    if(message == "DONE"):
+        sendDone = True
     #THREAD
     tS = Thread(target=TCPSend,args=(message, False, ))
     tS.start()
@@ -293,3 +340,4 @@ while True:
     #RECEIVE SOCKET
     #recvTime = gmtime(time())
     #receiveACK(seqNum)
+print("You have now been disconnected.")
