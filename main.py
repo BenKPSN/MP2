@@ -30,7 +30,7 @@ def createSegment(message, seqNum, isACK, isSYN):
     sourcePort = recvPort
     destPort = sendPort
     ackNum = seqNum + 1
-    checksum = 0
+    checksum = Checksum(message)
     #isACK = 0 #REPLACE WITH 0 OR 1 DEPENDING ON VALUE
 
     sendSeqNum = seqNum
@@ -151,7 +151,7 @@ def TCPReceive():
         #PERFORM CHECKSUM CALCULATIONS
         #FIND CHECKSUM
 
-        calcChecksum = 0 #TEMP
+        calcChecksum = Checksum(message)
 
         receivedChecksum = message[6]
         if(calcChecksum == receivedChecksum):
