@@ -124,7 +124,8 @@ def receiveACK(seqNum):
 def Checksum(message):
     csum = 0
     for i in range(len(message)):
-        csum = csum + message[i]
+        #csum = csum + message[i]
+        csum += 1
 
     res = 255 - csum % 256
     return res
@@ -143,6 +144,7 @@ def TCPReceive():
         #recvTime = gmtime(time())
         recvTime = time()
         message = pickle.loads(message)
+        #print("message received")
         #FIND IF ACK
         isACK = message[7]
         ackValue = message[4]
@@ -151,7 +153,7 @@ def TCPReceive():
         #PERFORM CHECKSUM CALCULATIONS
         #FIND CHECKSUM
 
-        calcChecksum = Checksum(message)
+        calcChecksum = Checksum(message[9])
 
         receivedChecksum = message[6]
         if(calcChecksum == receivedChecksum):
@@ -245,7 +247,7 @@ def handshakeRecv(sock):
     #print("ACK got")
 
 def threeWayHandshake(sock):
-    sleep(2)
+    sleep(5)
     #print("in threeway")
     hS = Thread(target=handshakeSend,args=(sock, ))
     hR = Thread(target=handshakeRecv,args=(sock, ))
