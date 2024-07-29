@@ -19,10 +19,14 @@ timeList = []
 unackedMessages = []
 maxSeqNum = 87
 cwnd = 99
+testDone = 0
+testEndSeq = 0
 sendReady = False
 recvReady = False
 sendDone = False
 recvDone = False
+sendTest = False
+recvTest = False
 for i in range(maxSeqNum):
     isACKList.append(0)
     timeList.append(0)
@@ -31,6 +35,7 @@ for i in range(maxSeqNum):
 def createSegment(message, seqNum, isACK, isSYN):
     global recvPort
     global cwnd
+    global testDone
     sourcePort = recvPort
     destPort = sendPort
     ackNum = seqNum + 1
@@ -57,12 +62,12 @@ def createSegment(message, seqNum, isACK, isSYN):
 
     #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
 
-    toSend = ['localhost', sourcePort, destPort, sendSeqNum, ackNum, cwnd, checksum, SYN, ACK, message]
+    toSend = ['localhost', sourcePort, destPort, sendSeqNum, ackNum, cwnd, checksum, SYN, ACK, message, testDone]
     #toSend = header + data
     return toSend
 
 
-def timerACK(message, seqNum):
+def timerACK(message, seqNum, testNum, messageTestNum):
     notACK = True
     global isACKList
     global timeOutTime
@@ -73,7 +78,11 @@ def timerACK(message, seqNum):
         sleep(timeOutTime)
         if(isACKList[seqNum] == 0 and not sendDone):
             #SEND
-            mySocket.sendto(pickle.dumps(message), ('localhost', sendPort))
+            if(messageTestNum == 6):
+                if(testNum != 1):
+                    mySocket.sendto(pickle.dumps(message), ('localhost', sendPort))
+                else:
+                    notACK = False
         else:
             notACK = False
 
@@ -87,6 +96,7 @@ def TCPSend(message, isACK):
     global sendPort
     global sendDone
     global maxSeqNum
+    global sendTest
     toSend = createSegment(message, nextSeq, isACK, False)
     #SOCKET STUFF
     mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
@@ -96,7 +106,7 @@ def TCPSend(message, isACK):
     isACKList[currSeq] = 0
     unackedMessages[currSeq] = toSend
     #NEW THREAD
-    tA = Thread(target=timerACK,args=(toSend,currSeq))
+    tA = Thread(target=timerACK,args=(toSend,currSeq,0,0))
     tA.start()
     #nextSeq = (nextSeq + len(message)) % maxSeqNum
     nextSeq += 1 #FOCUS ON BASICS FOR NOW
@@ -104,6 +114,8 @@ def TCPSend(message, isACK):
         sendDone = True
         for i in range(maxSeqNum):
             isACKList[i] = 1
+    if(message == "TEST"):
+        sendTest = True
 
 def timeoutCalc(sendTime, timeReceived):
     global timeOutTime
@@ -121,7 +133,12 @@ def receiveACK(seqNum):
     global recvTime
     global maxSeqNum
     global lastMessage
+    global testEndSeq
+    global recvTest
     timeoutCalc(timeList[seqNum], recvTime)
+    if(recvTest):
+        print(seqNum)
+        testEndSeq = seqNum
     if(seqNum > base):
         base = seqNum
         base = base % maxSeqNum
@@ -152,9 +169,13 @@ def TCPReceive():
     global mySocket
     global sendDone
     global recvDone
+    global sendTest
+    global recvTest
     #THIS WILL ALWAYS ACKNOWLEDGE THE FIRST PACKET
     ackToSend = createSegment("", 0, True, False)
     while (not recvDone):
+        #while(sendTest):
+        #    sleep(1)
         #RECEIVE MESSAGE
         message, clientAddress = mySocket.recvfrom(recvPort)
         #recvTime = gmtime(time())
@@ -174,6 +195,7 @@ def TCPReceive():
         receivedChecksum = message[6]
         if(calcChecksum == receivedChecksum):
             if (isACK == 1 and not sendDone):
+                print("ACK")
                 receiveACK(ackValue)
             elif (message[9] == "DONE" and sendDone):
                 print("Receiver closed")
@@ -183,6 +205,8 @@ def TCPReceive():
                 sleep(timeOutTime*2)
                 recvDone = True
             elif (expectedSeq == receivedSeqNum):
+                #FOR THE TEST PROCESS
+                testDone = message[10]
                 if(message[9] == "DONE"):
                     print("Received DONE")
                     sendDone = True
@@ -203,6 +227,15 @@ def TCPReceive():
                         if(isACK == 1 and message[4] == (receivedSeqNum + 1)):
                             print("Received final ACK")
                             finalACK = True
+                elif(message[9] == "TEST"):
+                    sendTest = True
+                    recvTest = True
+                    ackToSend = createSegment("TEST", receivedSeqNum, True, False)
+                    #DIRECTLY SEND
+                    print(receivedSeqNum)
+                    mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
+                    tst = Thread(target=testingReceiver)
+                    tst.start()
                 else:
                     #GRAB DATA AND PRINT
                     print(message[9])
@@ -230,7 +263,7 @@ def handshakeSend(sock):
     timeList[currSeq] = time()
     isACKList[currSeq] = 0
     #NEW THREAD
-    tA = Thread(target=timerACK,args=(handshakeMessage,currSeq))
+    tA = Thread(target=timerACK,args=(handshakeMessage,currSeq,0,0))
     tA.start()
     synACKGot = False
     #print("waiting for SYNACK")
@@ -274,7 +307,7 @@ def handshakeRecv(sock):
     timeList[currSeq] = time()
     isACKList[currSeq] = 0
     #NEW THREAD
-    tA = Thread(target=timerACK,args=(handshakeACK,currSeq))
+    tA = Thread(target=timerACK,args=(handshakeACK,currSeq,0,0))
     tA.start()
     ackGot = False
     #print("waiting for ACK")
@@ -293,13 +326,81 @@ def handshakeRecv(sock):
     recvReady = True
     #print("ACK got")
 
-def threeWayHandshake(sock, userNumber):
+def threeWayHandshake(sock):
     sleep(5)
     #print("in threeway")
     hS = Thread(target=handshakeSend,args=(sock, ))
     hR = Thread(target=handshakeRecv,args=(sock, ))
     hS.start()
     hR.start()
+
+def testingSender():
+    global sendTest
+    global recvTest
+    global mySocket
+    global sendPort
+    global recvPort
+    global testEndSeq
+    global testDone
+    global base
+    while(sendTest and not recvTest):
+        message, clientAddress = mySocket.recvfrom(recvPort)
+        message = pickle.loads(message)
+        isACK = message[7]
+        ackValue = message[4]
+        calcChecksum = Checksum(message[9])
+        receivedChecksum = message[6]
+        if(receivedChecksum == calcChecksum and isACK == 1 and message[9] == "TEST"):
+            recvTest = True
+    print("We will now begin the tests.")
+    print('\n')
+
+    keepBase = base
+    base = 0
+    
+    print("TEST 1")
+    print("10 messages will be sent, consisting of the numbers 1 through 10.")
+    print("Message #6, however, will be forced to not send, nor resend.")
+    print("It will only resend when we get the Triple Duplicate ACK.")
+    sleep(3)
+    
+    testDone = 1
+    testEndSeq = 0
+    testSend = 1
+    while(testSend != 11):
+        toSend = createSegment(str(testSend), testSend, False, False)
+        mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
+        currSeq = testSend
+        timeList[currSeq] = time()
+        isACKList[currSeq] = 0
+        unackedMessages[currSeq] = toSend
+        tA = Thread(target=timerACK,args=(toSend,currSeq,1,testSend))
+        tA.start()
+        testSend += 1
+    print("All sent. Awaiting response.")
+    while(testEndSeq != 10):
+        sleep(0.5)
+    testEndSeq = 0
+    print("Test 1 complete")
+    print("\n")
+
+    print("Testing complete!")
+    print("\n")
+    sendTest = False
+    recvTest = False
+    base = keepBase
+
+def testingReceiver():
+    global expectedSeq
+    keepSeq = expectedSeq
+    expectedSeq = 1
+    print("Awaiting sender to test. Please do not enter anything until testing is complete.")
+    while(not testDone):
+        sleep(0.1)
+    print("All tests are done! You may now send.")
+    sendTest = False
+    recvTest = False
+    expectedSeq = keepSeq
 
 userSelected = False
 while (not userSelected):
@@ -321,7 +422,7 @@ mySocket.bind(('', recvPort))
 
 print("Please wait for set up.")
 
-threeWayHandshake(mySocket, userNum)
+threeWayHandshake(mySocket)
 
 while (not sendReady or not recvReady):
     sleep(1)
@@ -347,4 +448,6 @@ while (not sendDone):
     #RECEIVE SOCKET
     #recvTime = gmtime(time())
     #receiveACK(seqNum)
+    if(message == "TEST"):
+        testingSender()
 print("You have now been disconnected.")
