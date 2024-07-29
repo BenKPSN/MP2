@@ -120,6 +120,15 @@ def receiveACK(seqNum):
             mySocket.sendto(pickle.dumps(lastMessage), ('localhost', sendPort))
             timeList[seqNum] = time()
 
+# a very simple checksum, will replace with a two-dimensional parity scheme when I figure it out
+def Checksum(message):
+    csum = 0
+    for i in range(len(message)):
+        csum = csum + message[i]
+
+    res = 255 - csum % 256
+    return res
+
 def TCPReceive():
     global expectedSeq
     global recvTime
