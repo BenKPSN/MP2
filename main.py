@@ -112,8 +112,13 @@ def receiveACK(seqNum):
     if(seqNum > base):
         base = seqNum % base
         isACKList[seqNum] = 1
-    #else:
-        #DROPPED A PACKET, HANDLE
+    else:
+        if(seqNum == lastACK):
+            timesACK += 1
+        if(timesACK == 3):
+            timesACK = 0
+            mySocket.sendto(pickle.dumps(lastMessage), ('localhost', sendPort))
+            timeList[seqNum] = time()
 
 def TCPReceive():
     global expectedSeq
