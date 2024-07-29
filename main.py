@@ -16,6 +16,7 @@ estTime = 0
 devTime = 0
 isACKList = []
 timeList = []
+unackedMessages = []
 maxSeqNum = 87
 cwnd = 99
 sendReady = False
@@ -25,6 +26,7 @@ recvDone = False
 for i in range(maxSeqNum):
     isACKList.append(0)
     timeList.append(0)
+    unackedMessages.append([])
 
 def createSegment(message, seqNum, isACK, isSYN):
     global recvPort
@@ -69,7 +71,7 @@ def timerACK(message, seqNum):
     global sendPort
     while(notACK):
         sleep(timeOutTime)
-        if(isACKList[seqNum] == 0):
+        if(isACKList[seqNum] == 0 and not sendDone):
             #SEND
             mySocket.sendto(pickle.dumps(message), ('localhost', sendPort))
         else:
@@ -92,6 +94,7 @@ def TCPSend(message, isACK):
     #timeList[currSeq] = gmtime(time())
     timeList[currSeq] = time()
     isACKList[currSeq] = 0
+    unackedMessages[currSeq] = toSend
     #NEW THREAD
     tA = Thread(target=timerACK,args=(toSend,currSeq))
     tA.start()
@@ -116,16 +119,19 @@ def receiveACK(seqNum):
     global base
     global timeList
     global recvTime
+    global maxSeqNum
+    global lastMessage
     timeoutCalc(timeList[seqNum], recvTime)
     if(seqNum > base):
-        base = seqNum % base
+        base = seqNum
+        base = base % maxSeqNum
         isACKList[seqNum] = 1
     else:
         if(seqNum == lastACK):
             timesACK += 1
         if(timesACK == 3):
             timesACK = 0
-            mySocket.sendto(pickle.dumps(lastMessage), ('localhost', sendPort))
+            mySocket.sendto(pickle.dumps(unackedMessages[base]), ('localhost', sendPort))
             timeList[seqNum] = time()
 
 # a very simple checksum, will replace with a two-dimensional parity scheme when I figure it out
@@ -204,6 +210,8 @@ def TCPReceive():
                     #DIRECTLY SEND
                     mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
                     expectedSeq += 1
+            else:
+                mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
         else:
             #DIRECTLY SEND
             mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
@@ -285,12 +293,11 @@ def handshakeRecv(sock):
     recvReady = True
     #print("ACK got")
 
-def threeWayHandshake(sock):
+def threeWayHandshake(sock, userNumber):
     sleep(5)
     #print("in threeway")
     hS = Thread(target=handshakeSend,args=(sock, ))
     hR = Thread(target=handshakeRecv,args=(sock, ))
-    #print("threads start")
     hS.start()
     hR.start()
 
@@ -314,7 +321,7 @@ mySocket.bind(('', recvPort))
 
 print("Please wait for set up.")
 
-threeWayHandshake(mySocket)
+threeWayHandshake(mySocket, userNum)
 
 while (not sendReady or not recvReady):
     sleep(1)
