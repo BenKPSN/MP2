@@ -3,6 +3,7 @@ from threading import *
 from time import *
 import struct
 import pickle
+import random
 
 #THIS WORKS
 
@@ -29,6 +30,7 @@ sendDone = False
 recvDone = False
 sendTest = False
 recvTest = False
+constantStream = False
 for i in range(maxSeqNum):
     isACKList.append(0)
     timeList.append(0)
@@ -103,15 +105,19 @@ def TCPSend(message, isACK):
     global sendTest
     global cwnd
     global numTransit
+    randomChance = random.randint(1,51)
     if(numTransit >= cwnd):
         return
     toSend = createSegment(message, nextSeq, isACK, False)
     #SOCKET STUFF
-    mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
+    if(randomChance != 1 and randomChance != 2 and randomChance != 3):
+        mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
     currSeq = nextSeq
     #timeList[currSeq] = gmtime(time())
     timeList[currSeq] = time()
     isACKList[currSeq] = 0
+    if(randomChance == 1):
+        isACKList[currSeq] = 1
     numTransit += 1
     unackedMessages[currSeq] = toSend
     #NEW THREAD
@@ -167,7 +173,7 @@ def receiveACK(seqNum, isTest):
         if(timesACK >= 3):
             #print("TRIPLE")
             timesACK = 0
-            cwnd = 1
+            cwnd = cwnd // 2
             mySocket.sendto(pickle.dumps(unackedMessages[base]), ('localhost', sendPort))
             timeList[seqNum] = time()
 
@@ -470,21 +476,32 @@ tR.start()
 
 print('\n')
 print("You may now begin sending information.")
+print("To test the Triple Duplicate ACK functionality, please type TEST")
+print("To send a constant stream of data for checking Wireshark, please type CONSTANT")
 print("To disconnect, please type DONE")
 
-while (not sendDone):
+while (not sendDone and not constantStream):
     #SOCKETS?
     #THREAD
     message = input()
     if(message == "DONE"):
         sendDone = True
     #THREAD
-    tS = Thread(target=TCPSend,args=(message, False, ))
-    tS.start()
+    if(message != "CONSTANT"):
+        tS = Thread(target=TCPSend,args=(message, False, ))
+        tS.start()
     #seqNum = nextSeq
     #RECEIVE SOCKET
     #recvTime = gmtime(time())
     #receiveACK(seqNum)
     if(message == "TEST"):
         testingSender()
+    if(message == "CONSTANT"):
+        print("Prepare for constant stream of data. Check Wireshark!")
+        sleep(4)
+        constantStream = True
+
+while(constantStream):
+    tS = Thread(target=TCPSend,args=("a", False, ))
+    tS.start()
 print("You have now been disconnected.")
