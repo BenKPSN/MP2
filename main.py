@@ -276,7 +276,7 @@ def TCPReceive():
                 #Grab other useful message info.
                 testDone = message[10]
                 recvRWND = message[5]
-
+                print("print: ",testDone)
                 #If the message was the sender disconnecting....
                 if(message[9] == "DONE"):
                     print("Sender has disconnected. Shutting down.")
@@ -324,6 +324,11 @@ def TCPReceive():
                     
                     #Print the message.
                     print(message[9])
+                    #Check if last number in the test seq was recieved
+                    print(message[9] == '10')
+                    print("testDone ", testDone)
+                    if ((testDone == 1) and (message[9] == "10")):
+                        testDone = 0
 
                     #Send an ACK.
                     ackToSend = createSegment("", receivedSeqNum, True, False)
@@ -495,6 +500,7 @@ def testingSender():
 
     #Waiting until message 10 is ACKed.
     while(testEndSeq < 10):
+        print("testEndSeq: ", testEndSeq)
         sleep(0.5)
     testEndSeq = 0
 
@@ -519,7 +525,6 @@ def testingReceiver():
     expectedSeq = 1
     print("Awaiting sender to test. Please do not enter anything until testing is complete.")
     while(testDone == 1):
-        print("f2:", testDone)
         sleep(0.1)
     print("All tests are done! You may now send.")
     sendTest = False
