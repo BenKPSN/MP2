@@ -33,6 +33,7 @@ sendTest = False
 recvTest = False
 constantStream = False
 
+
 #Setting up three important lists.
 for i in range(maxSeqNum):
 
@@ -497,6 +498,7 @@ def testingSender():
         sleep(0.5)
     testEndSeq = 0
 
+    print("f1:", testDone)
     #This is to reset the receiver and tell it we're done.
     testDone = 0
     TCPSend("", False)
@@ -517,6 +519,7 @@ def testingReceiver():
     expectedSeq = 1
     print("Awaiting sender to test. Please do not enter anything until testing is complete.")
     while(testDone == 1):
+        print("f2:", testDone)
         sleep(0.1)
     print("All tests are done! You may now send.")
     sendTest = False
@@ -524,6 +527,33 @@ def testingReceiver():
     expectedSeq = keepSeq
 
 userSelected = False
+
+
+""" 
+import os
+import sys
+import subprocess
+
+try:
+    num = sys.argv[1]
+except IndexError:
+    num = '0'
+print(num)
+
+while (not userSelected):
+    print(num=='1')
+    if(num == '0'):
+        userSelected = True
+        recvPort = 9876
+        sendPort = 9875  
+
+        subprocess.Popen('C:/Python312/python.exe main.py 1')     
+    if(num == '1'):
+        userSelected = True
+        recvPort = 9875
+        sendPort = 9876 
+
+"""  
 
 #Select a user.
 while (not userSelected):
@@ -538,6 +568,7 @@ while (not userSelected):
         sendPort = 9876
     else:
         print("ERROR: Not a valid user. Please try again.")
+
 
 #Socket.
 mySocket = socket(AF_INET, SOCK_DGRAM)
