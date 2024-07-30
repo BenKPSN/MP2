@@ -227,6 +227,7 @@ def TCPReceive():
     #If first packet fails, this acknowledges it.
     ackToSend = createSegment("", 0, True, False)
     currentlyTesting = False
+    keepSeq = 0
 
     #The main listener.
     while (not recvDone):
@@ -277,7 +278,6 @@ def TCPReceive():
                 #Grab other useful message info.
                 testDone = message[10]
                 recvRWND = message[5]
-                print("print: ",testDone)
                 #If the message was the sender disconnecting....
                 if(message[9] == "DONE"):
                     print("Sender has disconnected. Shutting down.")
@@ -314,15 +314,19 @@ def TCPReceive():
                 elif(message[9] == "TEST"):
                     sendTest = True
                     recvTest = True
+                    keepSeq = expectedSeq
+                    expectedSeq = 1
 
                     #Send an ACK.
                     ackToSend = createSegment("TEST", receivedSeqNum, True, False)
                     testDone = 1
                     mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
-
-                    #Get ready for testing.
-                    tst = Thread(target=testingReceiver)
-                    tst.start()
+                
+                #Check if the test is done.
+                elif(expectedSeq == 11 and recvTest):
+                    expectedSeq = keepSeq
+                    sendTest = False
+                    recvTest = False
                 
                 #Otherwise....
                 else:
@@ -330,8 +334,6 @@ def TCPReceive():
                     #Print the message.
                     print(message[9])
                     #Check if last number in the test seq was recieved
-                    print(message[9] == '10')
-                    print("testDone ", testDone)
                     if ((testDone == 1) and (message[9] == "10")):
                         testDone = 0
 
@@ -503,15 +505,23 @@ def testingSender():
         tA = Thread(target=timerACK,args=(toSend,currSeq,1,testSend))
         tA.start()
         testSend += 1
-    print("All sent. Awaiting response.")
 
     #Waiting until message 10 is ACKed.
     while(testEndSeq < 10):
-        print("testEndSeq: ", testEndSeq)
         sleep(0.5)
     testEndSeq = 0
 
-    print("f1:", testDone)
+    #Sending one last message to tell receiver we're done.
+    toSend = createSegment(str(testSend), testSend, False, False)
+    mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
+    currSeq = testSend
+    timeList[currSeq] = time()
+    isACKList[currSeq] = 0
+    isACKList[currSeq] = 1
+    unackedMessages[currSeq] = toSend
+    tA = Thread(target=timerACK,args=(toSend,currSeq,1,testSend))
+    tA.start()
+
     #This is to reset the receiver and tell it we're done.
     testDone = 0
     TCPSend("", False, cwnd, numTransit)
@@ -523,7 +533,7 @@ def testingSender():
     base = keepBase
 
 #Waiting for the sender to be done testing.
-def testingReceiver():
+"""def testingReceiver():
     global expectedSeq
     global sendTest
     global recvTest
@@ -537,7 +547,7 @@ def testingReceiver():
     sendTest = False
     recvTest = False
     expectedSeq = keepSeq
-
+"""
 userSelected = False
 
 
