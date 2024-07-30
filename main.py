@@ -82,11 +82,11 @@ def timerACK(message, seqNum, testNum, messageTestNum):
         sleep(timeOutTime)
         if(isACKList[seqNum] == 0 and not sendDone):
             #SEND
-            if(messageTestNum == 6):
-                if(testNum != 1):
-                    mySocket.sendto(pickle.dumps(message), ('localhost', sendPort))
-                else:
-                    notACK = False
+            #if(messageTestNum == 6):
+            #    if(testNum != 1):
+            mySocket.sendto(pickle.dumps(message), ('localhost', sendPort))
+            #    else:
+            #        notACK = False
         else:
             notACK = False
 
@@ -103,8 +103,8 @@ def TCPSend(message, isACK):
     global sendTest
     global cwnd
     global numTransit
-    #if(numTransit >= cwnd):
-    #    return
+    if(numTransit >= cwnd):
+        return
     toSend = createSegment(message, nextSeq, isACK, False)
     #SOCKET STUFF
     mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
@@ -165,6 +165,7 @@ def receiveACK(seqNum, isTest):
         if(seqNum == base):
             timesACK += 1
         if(timesACK >= 3):
+            #print("TRIPLE")
             timesACK = 0
             cwnd = 1
             mySocket.sendto(pickle.dumps(unackedMessages[base]), ('localhost', sendPort))
@@ -258,6 +259,7 @@ def TCPReceive():
                     sendTest = True
                     recvTest = True
                     ackToSend = createSegment("TEST", receivedSeqNum, True, False)
+                    testDone = 1
                     #DIRECTLY SEND
                     #print(receivedSeqNum)
                     mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
@@ -381,13 +383,12 @@ def testingSender():
         receivedChecksum = message[6]
         if(receivedChecksum == calcChecksum and isACK == 1 and message[9] == "TEST"):
             recvTest = True
-    print("We will now begin the tests.")
+    print("We will now begin testing Triple Duplicate ACK.")
     print('\n')
 
     keepBase = base
     base = 0
     
-    print("TEST 1")
     print("10 messages will be sent, consisting of the numbers 1 through 10.")
     print("Message #6, however, will be forced to not send, nor resend.")
     print("It will only resend when we get the Triple Duplicate ACK.")
@@ -398,22 +399,26 @@ def testingSender():
     testSend = 1
     while(testSend != 11):
         toSend = createSegment(str(testSend), testSend, False, False)
-        mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
+        if(toSend != 6):
+            mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
         currSeq = testSend
         timeList[currSeq] = time()
         isACKList[currSeq] = 0
+        if(toSend == 6):
+            isACKList[currSeq] = 1
         unackedMessages[currSeq] = toSend
         tA = Thread(target=timerACK,args=(toSend,currSeq,1,testSend))
         tA.start()
         testSend += 1
     print("All sent. Awaiting response.")
-    while(testEndSeq != 10):
+    while(testEndSeq < 10):
         sleep(0.5)
     testEndSeq = 0
-    print("Test 1 complete")
-    print("\n")
 
-    print("Testing complete!")
+    testDone = 0
+    TCPSend("", False)
+
+    print("Test complete! You may begin typing once more.")
     print("\n")
     sendTest = False
     recvTest = False
@@ -423,10 +428,11 @@ def testingReceiver():
     global expectedSeq
     global sendTest
     global recvTest
+    global testDone
     keepSeq = expectedSeq
     expectedSeq = 1
     print("Awaiting sender to test. Please do not enter anything until testing is complete.")
-    while(not testDone):
+    while(testDone == 1):
         sleep(0.1)
     print("All tests are done! You may now send.")
     sendTest = False
