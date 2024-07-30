@@ -10,7 +10,7 @@ recvPort = 9876
 sendPort = 9875
 nextSeq = 5
 expectedSeq = 5
-base = 5
+base = 0
 timeOutTime = 1
 estTime = 0
 devTime = 0
@@ -18,7 +18,8 @@ isACKList = []
 timeList = []
 unackedMessages = []
 maxSeqNum = 87
-cwnd = 99
+rwnd = 99
+recvRWND = 15
 testDone = 0
 testEndSeq = 0
 sendReady = False
@@ -31,10 +32,12 @@ for i in range(maxSeqNum):
     isACKList.append(0)
     timeList.append(0)
     unackedMessages.append([])
+cwnd = 1
+numTransit = 0
 
 def createSegment(message, seqNum, isACK, isSYN):
     global recvPort
-    global cwnd
+    global rwnd
     global testDone
     sourcePort = recvPort
     destPort = sendPort
@@ -53,16 +56,16 @@ def createSegment(message, seqNum, isACK, isSYN):
         SYN = 1
 
     #16, 16, 32, 32, 16, 16
-    #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
+    #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, rwnd, checksum)
     
     #Must be at most 255 characters
     #data = struct.pack("p", message)
 
     #CHECKSUM
 
-    #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, cwnd, checksum)
+    #header = struct.pack("!HHIIHH", sourcePort, destPort, seqNum, ackNum, rwnd, checksum)
 
-    toSend = ['localhost', sourcePort, destPort, sendSeqNum, ackNum, cwnd, checksum, SYN, ACK, message, testDone]
+    toSend = ['localhost', sourcePort, destPort, sendSeqNum, ackNum, rwnd, checksum, SYN, ACK, message, testDone]
     #toSend = header + data
     return toSend
 
@@ -97,6 +100,10 @@ def TCPSend(message, isACK):
     global sendDone
     global maxSeqNum
     global sendTest
+    global cwnd
+    global numTransit
+    #if(numTransit >= cwnd):
+    #    return
     toSend = createSegment(message, nextSeq, isACK, False)
     #SOCKET STUFF
     mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
@@ -104,6 +111,7 @@ def TCPSend(message, isACK):
     #timeList[currSeq] = gmtime(time())
     timeList[currSeq] = time()
     isACKList[currSeq] = 0
+    numTransit += 1
     unackedMessages[currSeq] = toSend
     #NEW THREAD
     tA = Thread(target=timerACK,args=(toSend,currSeq,0,0))
@@ -135,19 +143,27 @@ def receiveACK(seqNum):
     global lastMessage
     global testEndSeq
     global recvTest
+    global recvRWND
+    global numTransit
+    global cwnd
     timeoutCalc(timeList[seqNum], recvTime)
     if(recvTest):
         print(seqNum)
         testEndSeq = seqNum
     if(seqNum > base):
+        print("got ACK")
         base = seqNum
         base = base % maxSeqNum
         isACKList[seqNum] = 1
+        numTransit -= 1
+        if(recvRWND > cwnd):
+            cwnd += 1
     else:
         if(seqNum == lastACK):
             timesACK += 1
         if(timesACK == 3):
             timesACK = 0
+            cwnd = 1
             mySocket.sendto(pickle.dumps(unackedMessages[base]), ('localhost', sendPort))
             timeList[seqNum] = time()
 
@@ -171,6 +187,7 @@ def TCPReceive():
     global recvDone
     global sendTest
     global recvTest
+    global recvRWND
     #THIS WILL ALWAYS ACKNOWLEDGE THE FIRST PACKET
     ackToSend = createSegment("", 0, True, False)
     while (not recvDone):
@@ -183,7 +200,7 @@ def TCPReceive():
         message = pickle.loads(message)
         #print("message received")
         #FIND IF ACK
-        isACK = message[7]
+        isACK = message[8]
         ackValue = message[4]
         #FIND SEQ NUM
         receivedSeqNum = message[3]
@@ -207,6 +224,7 @@ def TCPReceive():
             elif (expectedSeq == receivedSeqNum):
                 #FOR THE TEST PROCESS
                 testDone = message[10]
+                recvRWND = message[5]
                 if(message[9] == "DONE"):
                     print("Received DONE")
                     sendDone = True
@@ -267,6 +285,7 @@ def handshakeSend(sock):
     tA.start()
     synACKGot = False
     #print("waiting for SYNACK")
+    #sleep(3)
     while (not synACKGot):
         response, clientAddress = sock.recvfrom(recvPort)
         #recvTime = gmtime(time())
@@ -291,6 +310,7 @@ def handshakeRecv(sock):
     global recvReady
     synGot = False
     #print("waiting for message")
+    #sleep(3)
     while (not synGot):
         message, clientAddress = sock.recvfrom(recvPort)
         message = pickle.loads(message)
@@ -346,7 +366,7 @@ def testingSender():
     while(sendTest and not recvTest):
         message, clientAddress = mySocket.recvfrom(recvPort)
         message = pickle.loads(message)
-        isACK = message[7]
+        isACK = message[8]
         ackValue = message[4]
         calcChecksum = Checksum(message[9])
         receivedChecksum = message[6]
