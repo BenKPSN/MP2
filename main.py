@@ -157,7 +157,7 @@ def timeoutCalc(sendTime, timeReceived):
     timeOutTime = estTime + 4 * devTime
 
 #This handles when an ACK is received, both expected and not.
-def receiveACK(seqNum, isTest):
+"""def receiveACK(seqNum, isTest):
     global isACKList
     global base
     global timeList
@@ -195,10 +195,12 @@ def receiveACK(seqNum, isTest):
         
         #Perform Triple Duplicate ACK. As this is a loss, we also lower CWND.
         if(timesACK >= 3):
+            #print("TRIPLE")
             timesACK = 0
             cwnd = cwnd // 2
             mySocket.sendto(pickle.dumps(unackedMessages[base]), ('localhost', sendPort))
             timeList[seqNum] = time()
+"""
 
 # a very simple checksum, will replace with a two-dimensional parity scheme when I figure it out
 def Checksum(message):
@@ -223,11 +225,21 @@ def TCPReceive():
     global recvTest
     global recvRWND
     global testDone
+    global base
+    global timeList
+    global recvTime
+    global testEndSeq
+    global maxSeqNum
+    global isACKList
+    global numTransit
+    global cwnd
+    global unackedMessages
     
     #If first packet fails, this acknowledges it.
     ackToSend = createSegment("", 0, True, False)
     currentlyTesting = False
     keepSeq = 0
+    ackAmount = timesACK
 
     #The main listener.
     while (not recvDone):
@@ -256,8 +268,43 @@ def TCPReceive():
                 else:
                     currentlyTesting = False
                 
+                #if(ackValue == base)
+                
                 #Handle the ACK.
-                receiveACK(ackValue, currentlyTesting)
+                #receiveACK(ackValue, currentlyTesting, ackAmount)
+                timeoutCalc(timeList[ackValue], recvTime)
+
+                #For checking the ACKs received when testing.
+                if(currentlyTesting):
+                    print(ackValue)
+                    testEndSeq = ackValue
+    
+                #If this is true, we have an ACK we expected. Stop resending the message and increase base.
+                if(ackValue > base):
+                    ackAmount = 0
+                    base = ackValue
+                    base = base % maxSeqNum
+                    isACKList[ackValue] = 1
+                    numTransit -= 1
+                    if(recvRWND > cwnd):
+                        cwnd += 1
+    
+                #Otherwise....
+                else:
+
+                    #For checking amount of duplicate ACKs.
+                    if(ackValue == base):
+                        ackAmount += 1
+                        print('DUPLICATE ACK RECEIVED')
+        
+                    #Perform Triple Duplicate ACK. As this is a loss, we also lower CWND.
+                    if(ackAmount >= 3):
+                        #print("TRIPLE DUPLICATE")
+                        ackAmount = 0
+                        cwnd = cwnd // 2
+                        firstUnACK = (base + 1) % maxSeqNum
+                        mySocket.sendto(pickle.dumps(unackedMessages[firstUnACK]), ('localhost', sendPort))
+                        timeList[ackValue] = time()
             
             #If the receiver acknowledged our disconnect....
             elif (message[9] == "DONE" and sendDone):
@@ -324,6 +371,7 @@ def TCPReceive():
                 
                 #Check if the test is done.
                 elif(expectedSeq == 11 and recvTest):
+                    print("Testing done!")
                     expectedSeq = keepSeq
                     sendTest = False
                     recvTest = False
@@ -494,12 +542,12 @@ def testingSender():
     #Send the 10 messages. 6 is lost.
     while(testSend != 11):
         toSend = createSegment(str(testSend), testSend, False, False)
-        if(toSend != 6):
+        if(testSend != 6):
             mySocket.sendto(pickle.dumps(toSend), ('localhost', sendPort))
         currSeq = testSend
         timeList[currSeq] = time()
         isACKList[currSeq] = 0
-        if(toSend == 6):
+        if(testSend == 6):
             isACKList[currSeq] = 1
         unackedMessages[currSeq] = toSend
         tA = Thread(target=timerACK,args=(toSend,currSeq,1,testSend))
