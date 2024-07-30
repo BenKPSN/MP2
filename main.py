@@ -93,7 +93,7 @@ def timerACK(message, seqNum, testNum, messageTestNum):
             notACK = False
 
 #Sends a message.
-def TCPSend(message, isACK):
+def TCPSend(message, isACK, cwnd, transitNum):
     global nextSeq
     global timeList
     global isACKList
@@ -103,7 +103,7 @@ def TCPSend(message, isACK):
     global sendDone
     global maxSeqNum
     global sendTest
-    global cwnd
+    #global cwnd
     global numTransit
 
     #This value is for randomly choosing if a message fails to send or gets lost.
@@ -111,8 +111,8 @@ def TCPSend(message, isACK):
 
     #FIX THIS: SHOULD STOP MESSAGES FROM SENDING WHEN WINDOW IS FULL
     #ALSO, MAYBE HAVE THE MESSAGES SAVED FOR LATER? IDK
-    #if(numTransit >= cwnd):
-    #    return
+    while(transitNum >= cwnd):
+        sleep(0.1)
     
     #Create and send the segment.
     toSend = createSegment(message, nextSeq, isACK, False)
@@ -264,6 +264,7 @@ def TCPReceive():
 
                 #Send an ACK.
                 ackToSend = createSegment("DONE", receivedSeqNum, True, False)
+                sleep(1)
                 mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
                 sleep(timeOutTime*2)
 
@@ -284,25 +285,29 @@ def TCPReceive():
                     recvDone = True
 
                     #Send an ACK.
-                    ackToSend = createSegment("", receivedSeqNum, True, False)
-                    mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
+                    #ackToSend = createSegment("", receivedSeqNum, True, False)
+                    #mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
 
                     #Send our own message to disconnect.
-                    doneMessage = createSegment("DONE", receivedSeqNum + 1, False, False)
+                    #print(receivedSeqNum)
+                    ackToLookFor = receivedSeqNum + 1
+                    doneMessage = createSegment("DONE", ackToLookFor, False, False)
                     mySocket.sendto(pickle.dumps(doneMessage), ('localhost', sendPort))
-                    print("waiting for last ACK")
+                    #print("waiting for last ACK")
                     finalACK = False
 
                     #Now we wait for the ACK.
                     while(not finalACK):
                         message, clientAddress = mySocket.recvfrom(recvPort)
                         message = pickle.loads(message)
-                        isACK = message[7]
+                        isACK = message[8]
                         ackValue = message[4]
+                        #print(ackValue)
+                        #print(ackToLookFor)
 
                         #If we received it, we can fully disconnect.
-                        if(isACK == 1 and message[4] == (receivedSeqNum + 1)):
-                            print("Received final ACK")
+                        if(isACK == 1 and ackValue == ackToLookFor):
+                            #print("Received final ACK")
                             finalACK = True
                 
                 #If the message was the beginning of testing Triple Duplicate ACK....
@@ -455,6 +460,8 @@ def testingSender():
     global testEndSeq
     global testDone
     global base
+    global cwnd
+    global numTransit
 
     #Wait for an ACK from the receiver before beginning.
     while(sendTest and not recvTest):
@@ -507,7 +514,7 @@ def testingSender():
     print("f1:", testDone)
     #This is to reset the receiver and tell it we're done.
     testDone = 0
-    TCPSend("", False)
+    TCPSend("", False, cwnd, numTransit)
 
     print("Test complete! You may begin typing once more.")
     print("\n")
@@ -605,7 +612,7 @@ while (not sendDone and not constantStream):
     
     #Don't want to send the receiver CONSTANT.
     if(message != "CONSTANT"):
-        tS = Thread(target=TCPSend,args=(message, False, ))
+        tS = Thread(target=TCPSend,args=(message, False, cwnd, numTransit))
         tS.start()
     if(message == "TEST"):
         testingSender()
@@ -617,6 +624,6 @@ while (not sendDone and not constantStream):
 #This should send a never-ending stream of "a" for looking at with wireshark.
 #DOES NOT WORK DUE TO CWND.
 while(constantStream):
-    tS = Thread(target=TCPSend,args=("a", False, ))
+    tS = Thread(target=TCPSend,args=("a", False, cwnd, numTransit))
     tS.start()
 print("You have now been disconnected.")
