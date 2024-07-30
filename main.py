@@ -19,6 +19,7 @@ timeList = []
 unackedMessages = []
 maxSeqNum = 87
 rwnd = 99
+timesACK = 0
 recvRWND = 15
 testDone = 0
 testEndSeq = 0
@@ -134,7 +135,7 @@ def timeoutCalc(sendTime, timeReceived):
     estTime = 0.875 * estTime + 0.125 * measureTime
     timeOutTime = estTime + 4 * devTime
 
-def receiveACK(seqNum):
+def receiveACK(seqNum, isTest):
     global isACKList
     global base
     global timeList
@@ -142,16 +143,18 @@ def receiveACK(seqNum):
     global maxSeqNum
     global lastMessage
     global testEndSeq
-    global recvTest
+    #global recvTest
     global recvRWND
     global numTransit
     global cwnd
+    global timesACK
     timeoutCalc(timeList[seqNum], recvTime)
-    if(recvTest):
+    if(isTest):
         print(seqNum)
         testEndSeq = seqNum
     if(seqNum > base):
-        print("got ACK")
+        #print("got ACK")
+        timesACK = 0
         base = seqNum
         base = base % maxSeqNum
         isACKList[seqNum] = 1
@@ -159,9 +162,9 @@ def receiveACK(seqNum):
         if(recvRWND > cwnd):
             cwnd += 1
     else:
-        if(seqNum == lastACK):
+        if(seqNum == base):
             timesACK += 1
-        if(timesACK == 3):
+        if(timesACK >= 3):
             timesACK = 0
             cwnd = 1
             mySocket.sendto(pickle.dumps(unackedMessages[base]), ('localhost', sendPort))
@@ -188,8 +191,10 @@ def TCPReceive():
     global sendTest
     global recvTest
     global recvRWND
+    global testDone
     #THIS WILL ALWAYS ACKNOWLEDGE THE FIRST PACKET
     ackToSend = createSegment("", 0, True, False)
+    currentlyTesting = False
     while (not recvDone):
         #while(sendTest):
         #    sleep(1)
@@ -212,8 +217,12 @@ def TCPReceive():
         receivedChecksum = message[6]
         if(calcChecksum == receivedChecksum):
             if (isACK == 1 and not sendDone):
-                print("ACK")
-                receiveACK(ackValue)
+                if(testDone != 0):
+                    currentlyTesting = True
+                else:
+                    currentlyTesting = False
+                #print("ACK")
+                receiveACK(ackValue, currentlyTesting)
             elif (message[9] == "DONE" and sendDone):
                 print("Receiver closed")
                 print(receivedSeqNum)
@@ -250,7 +259,7 @@ def TCPReceive():
                     recvTest = True
                     ackToSend = createSegment("TEST", receivedSeqNum, True, False)
                     #DIRECTLY SEND
-                    print(receivedSeqNum)
+                    #print(receivedSeqNum)
                     mySocket.sendto(pickle.dumps(ackToSend), ('localhost', sendPort))
                     tst = Thread(target=testingReceiver)
                     tst.start()
@@ -412,6 +421,8 @@ def testingSender():
 
 def testingReceiver():
     global expectedSeq
+    global sendTest
+    global recvTest
     keepSeq = expectedSeq
     expectedSeq = 1
     print("Awaiting sender to test. Please do not enter anything until testing is complete.")
