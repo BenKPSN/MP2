@@ -327,7 +327,7 @@ def TCPReceive():
                 recvRWND = message[5]
                 #If the message was the sender disconnecting....
                 if(message[9] == "DONE"):
-                    print("Sender has disconnected. Shutting down.")
+                    print("Sender has disconnected. Press enter to shut down.")
                     sendDone = True
                     recvDone = True
 
