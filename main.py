@@ -31,7 +31,6 @@ sendDone = False
 recvDone = False
 sendTest = False
 recvTest = False
-constantStream = False
 
 
 #Setting up three important lists.
@@ -581,49 +580,7 @@ def testingSender():
     base = keepBase
 
 #Waiting for the sender to be done testing.
-"""def testingReceiver():
-    global expectedSeq
-    global sendTest
-    global recvTest
-    global testDone
-    keepSeq = expectedSeq
-    expectedSeq = 1
-    print("Awaiting sender to test. Please do not enter anything until testing is complete.")
-    while(testDone == 1):
-        sleep(0.1)
-    print("All tests are done! You may now send.")
-    sendTest = False
-    recvTest = False
-    expectedSeq = keepSeq
-"""
 userSelected = False
-
-
-""" 
-import os
-import sys
-import subprocess
-
-try:
-    num = sys.argv[1]
-except IndexError:
-    num = '0'
-print(num)
-
-while (not userSelected):
-    print(num=='1')
-    if(num == '0'):
-        userSelected = True
-        recvPort = 9876
-        sendPort = 9875  
-
-        subprocess.Popen('C:/Python312/python.exe main.py 1')     
-    if(num == '1'):
-        userSelected = True
-        recvPort = 9875
-        sendPort = 9876 
-
-"""  
 
 #Select a user.
 while (not userSelected):
@@ -659,29 +616,18 @@ tR.start()
 print('\n')
 print("You may now begin sending information.")
 print("To test the Triple Duplicate ACK functionality, please type TEST")
-print("To send a constant stream of data for checking Wireshark, please type CONSTANT")
+print("\n")
 print("To disconnect, please type DONE")
 
-#Lasts until we either type DONE or CONSTANT.
-while (not sendDone and not constantStream):
+#Lasts until we either type DONE
+while (not sendDone):
     message = input()
     if(message == "DONE"):
         sendDone = True
     
-    #Don't want to send the receiver CONSTANT.
-    if(message != "CONSTANT"):
-        tS = Thread(target=TCPSend,args=(message, False, cwnd, numTransit))
-        tS.start()
+    tS = Thread(target=TCPSend,args=(message, False, cwnd, numTransit))
+    tS.start()
     if(message == "TEST"):
         testingSender()
-    if(message == "CONSTANT"):
-        print("Prepare for constant stream of data. Check Wireshark!")
-        sleep(4)
-        constantStream = True
 
-#This should send a never-ending stream of "a" for looking at with wireshark.
-#DOES NOT WORK DUE TO CWND.
-while(constantStream):
-    tS = Thread(target=TCPSend,args=("a", False, cwnd, numTransit))
-    tS.start()
-print("You have now been disconnected.")
+
